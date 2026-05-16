@@ -5,14 +5,18 @@
 #include <sys/mman.h>
 
 Allocator::Allocator(std::uint32_t initial_capacity)
-    : heap{mmap(NULL, initial_capacity, PROT_READ | PROT_WRITE,
+    : capacity{initial_capacity},
+      heap{mmap(NULL, initial_capacity, PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)} {
   if (heap == MAP_FAILED) {
     throw std::runtime_error("mmap failed");
   }
-  free_list = new (heap)
-      ChunkInfo{nullptr, nullptr, initial_capacity - sizeof(ChunkInfo), false};
+  free_list = new (heap) ChunkInfo{
+      nullptr, nullptr,
+      initial_capacity - static_cast<std::uint32_t>(sizeof(ChunkInfo)), false};
 }
+
+Allocator::~Allocator() { munmap(heap, capacity); }
 
 void *Allocator::allocate(std::uint32_t size) {
   ChunkInfo *cur = next_free_chunk(free_list, size);
@@ -33,27 +37,47 @@ void Allocator::free(void *ptr) {
   if (ptr == nullptr) {
     return;
   }
-  ChunkInfo *chunk = reinterpret_cast<ChunkInfo *>(static_cast<char *>(ptr) -
-                                                   sizeof(ChunkInfo));
+  ChunkInfo *chunk = getChunkFromPointer(ptr);
   chunk->allocated = false;
-  if (chunk->prev != nullptr && !chunk->prev->allocated) {
-    chunk->prev->size += chunk->size + sizeof(ChunkInfo);
-    chunk->prev->next = chunk->next;
-    if (chunk->next != nullptr) {
-      chunk->next->prev = chunk->prev;
-    }
+  if (shouldMergePrevChunk(chunk)) {
+    mergePrevFreeChunk(chunk);
     chunk = chunk->prev;
   }
-  if (chunk->next != nullptr && !chunk->next->allocated) {
-    chunk->size += chunk->next->size + sizeof(ChunkInfo);
-    if (chunk->next->next != nullptr) {
-      chunk->next->next->prev = chunk;
-    }
-    chunk->next = chunk->next->next;
+  if (shouldMergeNextChunk(chunk)) {
+    mergeNextFreeChunk(chunk);
   }
   if (free_list == nullptr || chunk < free_list) {
     free_list = chunk;
   }
+}
+
+Allocator::ChunkInfo *Allocator::getChunkFromPointer(void *ptr) {
+  return reinterpret_cast<ChunkInfo *>(static_cast<char *>(ptr) -
+                                       sizeof(ChunkInfo));
+}
+
+bool Allocator::shouldMergeNextChunk(Allocator::ChunkInfo *chunk) {
+  return chunk->next != nullptr && !chunk->next->allocated;
+}
+
+bool Allocator::shouldMergePrevChunk(Allocator::ChunkInfo *chunk) {
+  return chunk->prev != nullptr && !chunk->prev->allocated;
+}
+
+void Allocator::mergePrevFreeChunk(Allocator::ChunkInfo *chunk) {
+  chunk->prev->size += chunk->size + sizeof(ChunkInfo);
+  chunk->prev->next = chunk->next;
+  if (chunk->next != nullptr) {
+    chunk->next->prev = chunk->prev;
+  }
+}
+
+void Allocator::mergeNextFreeChunk(Allocator::ChunkInfo *chunk) {
+  chunk->size += chunk->next->size + sizeof(ChunkInfo);
+  if (chunk->next->next != nullptr) {
+    chunk->next->next->prev = chunk;
+  }
+  chunk->next = chunk->next->next;
 }
 
 void Allocator::splitChunk(Allocator::ChunkInfo *chunk, std::uint32_t size) {
@@ -92,5 +116,5 @@ Allocator::next_free_chunk(Allocator::ChunkInfo *startChunk,
 }
 
 void *Allocator::nextChunkLocation(Allocator::ChunkInfo *chunk) {
-  return chunk + chunk->size + sizeof(ChunkInfo);
+  return reinterpret_cast<char *>(chunk) + chunk->size + sizeof(ChunkInfo);
 }
