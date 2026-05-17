@@ -11,14 +11,13 @@ Allocator::Allocator(std::uint32_t initial_capacity)
   if (heap == MAP_FAILED) {
     throw std::runtime_error("mmap failed");
   }
-  free_list = new (heap) ChunkInfo{
-      nullptr, nullptr,
-      initial_capacity - static_cast<std::uint32_t>(sizeof(ChunkInfo)), false};
+  free_list = new (heap) ChunkInfo{nullptr, nullptr, initial_capacity, false};
 }
 
 Allocator::~Allocator() { munmap(heap, capacity); }
 
 void *Allocator::allocate(std::uint32_t size) {
+  size = alignUp(size + sizeof(ChunkInfo));
   ChunkInfo *cur = next_free_chunk(free_list, size);
   if (cur == nullptr) {
     throw std::bad_alloc();
@@ -65,7 +64,7 @@ bool Allocator::shouldMergePrevChunk(Allocator::ChunkInfo *chunk) {
 }
 
 void Allocator::mergePrevFreeChunk(Allocator::ChunkInfo *chunk) {
-  chunk->prev->size += chunk->size + sizeof(ChunkInfo);
+  chunk->prev->size += chunk->size;
   chunk->prev->next = chunk->next;
   if (chunk->next != nullptr) {
     chunk->next->prev = chunk->prev;
@@ -73,7 +72,7 @@ void Allocator::mergePrevFreeChunk(Allocator::ChunkInfo *chunk) {
 }
 
 void Allocator::mergeNextFreeChunk(Allocator::ChunkInfo *chunk) {
-  chunk->size += chunk->next->size + sizeof(ChunkInfo);
+  chunk->size += chunk->next->size;
   if (chunk->next->next != nullptr) {
     chunk->next->next->prev = chunk;
   }
@@ -81,7 +80,7 @@ void Allocator::mergeNextFreeChunk(Allocator::ChunkInfo *chunk) {
 }
 
 void Allocator::splitChunk(Allocator::ChunkInfo *chunk, std::uint32_t size) {
-  std::uint32_t remainingFreeSize = chunk->size - size - sizeof(ChunkInfo);
+  std::uint32_t remainingFreeSize = chunk->size - size;
   chunk->size = size;
   ChunkInfo *remainingChunk = new (nextChunkLocation(chunk))
       ChunkInfo{chunk, chunk->next, remainingFreeSize, false};
@@ -116,5 +115,10 @@ Allocator::next_free_chunk(Allocator::ChunkInfo *startChunk,
 }
 
 void *Allocator::nextChunkLocation(Allocator::ChunkInfo *chunk) {
-  return reinterpret_cast<char *>(chunk) + chunk->size + sizeof(ChunkInfo);
+  return reinterpret_cast<char *>(chunk) + chunk->size;
+}
+
+std::size_t Allocator::alignUp(std::size_t size) {
+  const std::size_t ALIGN = 8;
+  return (size + ALIGN - 1) & ~(ALIGN - 1);
 }

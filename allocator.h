@@ -25,6 +25,8 @@ private:
   void mergePrevFreeChunk(ChunkInfo *chunk);
   ChunkInfo *getChunkFromPointer(void *ptr);
 
+  std::size_t alignUp(std::size_t size);
+
 public:
   Allocator(std::uint32_t initial_capacity);
   ~Allocator();

@@ -3,6 +3,11 @@
 #include <cstring>
 #include <new>
 
+std::size_t alignUp(std::size_t size) {
+  const std::size_t ALIGN = 8;
+  return (size + ALIGN - 1) & ~(ALIGN - 1);
+}
+
 void fill_memory(void *ptr, char byte, std::size_t size) {
   std::memset(ptr, byte, size);
 }
@@ -57,7 +62,7 @@ TEST_CASE("allocator", "[allocator]") {
     void *ptr1 = a.allocate(50);
     void *ptr2 = a.allocate(50);
     REQUIRE(static_cast<char *>(ptr2) ==
-            static_cast<char *>(ptr1) + 50 + CHUNK_INFO_SIZE);
+            static_cast<char *>(ptr1) + alignUp(50 + CHUNK_INFO_SIZE));
   }
 
   SECTION("Throws when allocates more memory than capacity") {
@@ -65,9 +70,14 @@ TEST_CASE("allocator", "[allocator]") {
   }
   SECTION("Coalesces adjacent free memory") {
     int NUM_PTRS = 5;
+    int blockSize = capacity / NUM_PTRS;
+    REQUIRE(capacity % NUM_PTRS == 0);
+    REQUIRE(blockSize % 8 == 0);
+    blockSize -= CHUNK_INFO_SIZE;
     void *ptrs[NUM_PTRS];
+
     for (int i = 0; i < NUM_PTRS; i++) {
-      ptrs[i] = a.allocate((capacity - CHUNK_INFO_SIZE * NUM_PTRS) / NUM_PTRS);
+      ptrs[i] = a.allocate(blockSize);
     }
     for (void *ptr : ptrs) {
       a.free(ptr);
