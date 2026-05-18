@@ -50,7 +50,7 @@ Allocator::ChunkInfo *Allocator::ChunkInfo::prev(void *heap) noexcept {
 
 bool Allocator::ChunkInfo::shouldSplit(
     std::size_t allocateSize) const noexcept {
-  return getSize() > allocateSize + sizeof(ChunkInfo);
+  return getSize() > allocateSize + 2 * sizeof(ChunkInfo);
 }
 
 Allocator::Allocator(std::size_t initialCapacity)
@@ -67,12 +67,13 @@ Allocator::Allocator(std::size_t initialCapacity)
 Allocator::~Allocator() noexcept { munmap(heap, capacity); }
 
 void *Allocator::allocate(std::size_t size) {
-  size = alignUp(size + sizeof(ChunkInfo));
+  size = alignUp(size + 2 * sizeof(ChunkInfo));
   ChunkInfo *cur = nextFreeFittingChunk(freeList, size);
   if (!chunkInHeap(cur)) {
     throw std::bad_alloc();
   }
   cur->setAllocated(true);
+  cur->getFooter()->setAllocated(true);
   if (cur->shouldSplit(size)) {
     splitChunk(cur, size);
   }
@@ -88,6 +89,7 @@ void Allocator::free(void *ptr) noexcept {
   }
   ChunkInfo *chunk = getChunkFromPointer(ptr);
   chunk->setAllocated(false);
+  chunk->getFooter()->setAllocated(false);
   if (shouldMergePrevChunk(chunk)) {
     mergePrevFreeChunk(chunk);
     chunk = chunk->prev(heap);

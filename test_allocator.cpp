@@ -24,7 +24,8 @@ void check_pattern(void *ptr, char byte, std::size_t size) {
     REQUIRE(p[i] == expected);
   }
 }
-const int CHUNK_INFO_SIZE = 8;
+constexpr std::size_t CHUNK_INFO_SIZE = sizeof(std::size_t);
+constexpr std::size_t CHUNK_OVERHEAD_SIZE = 2 * CHUNK_INFO_SIZE;
 
 struct ActiveAlloc {
   void *ptr;
@@ -120,7 +121,7 @@ TEST_CASE("allocator basic behavior", "[allocator]") {
     void *ptr1 = a.allocate(50);
     void *ptr2 = a.allocate(50);
     REQUIRE(static_cast<char *>(ptr2) ==
-            static_cast<char *>(ptr1) + alignUp(50 + CHUNK_INFO_SIZE));
+            static_cast<char *>(ptr1) + alignUp(50 + CHUNK_OVERHEAD_SIZE));
   }
 
   SECTION("Throws when allocates more memory than capacity") {
@@ -128,10 +129,10 @@ TEST_CASE("allocator basic behavior", "[allocator]") {
   }
   SECTION("Coalesces adjacent free memory") {
     int NUM_PTRS = 5;
-    int blockSize = capacity / NUM_PTRS;
+    std::size_t blockSize = capacity / NUM_PTRS;
     REQUIRE(capacity % NUM_PTRS == 0);
     REQUIRE(blockSize % 8 == 0);
-    blockSize -= CHUNK_INFO_SIZE;
+    blockSize -= CHUNK_OVERHEAD_SIZE;
     void *ptrs[NUM_PTRS];
 
     for (int i = 0; i < NUM_PTRS; i++) {
@@ -140,7 +141,7 @@ TEST_CASE("allocator basic behavior", "[allocator]") {
     for (void *ptr : ptrs) {
       a.free(ptr);
     }
-    a.allocate(capacity - CHUNK_INFO_SIZE);
+    a.allocate(capacity - CHUNK_OVERHEAD_SIZE);
   }
 
   SECTION("Throws when multiple allocations use more than capacity") {
@@ -159,7 +160,7 @@ TEST_CASE("allocator edge-case behavior", "[allocator][edge]") {
   }
 
   SECTION("Returned pointers are always 8-byte aligned") {
-    Allocator a{256};
+    Allocator a{1000};
     std::vector<std::size_t> requestSizes = {1, 2, 3, 7, 8, 9, 15, 16, 17, 31};
     std::vector<void *> ptrs;
     ptrs.reserve(requestSizes.size());
@@ -213,20 +214,20 @@ TEST_CASE("allocator edge-case behavior", "[allocator][edge]") {
     a.free(big);
   }
 
-  SECTION("Does not split when remainder equals header size") {
+  SECTION("Does not split when remainder equals header+footer size") {
     Allocator a{200};
     // Internal allocated chunk size is 184 (168 payload + header + footer).
     // Remainder is 16, so allocator should not split.
-    void *ptr = a.allocate(200 - 16 - 16);
+    void *ptr = a.allocate(200 - CHUNK_OVERHEAD_SIZE - 16);
     REQUIRE_THROWS_AS(a.allocate(1), std::bad_alloc);
     a.free(ptr);
   }
 
   SECTION("Splits when remainder can fit another minimum chunk") {
     Allocator a{200};
-    // Internal allocated chunk size is 176 (160 payload + header + footer).
-    // Remainder is 24, so should hold another minimum chunk.
-    void *first = a.allocate(200 - 16 - 24);
+    // Requested chunk size is 176 (160 payload + 16 metadata).
+    // Remainder is 24, so it can hold another valid chunk.
+    void *first = a.allocate(200 - CHUNK_OVERHEAD_SIZE - 24);
     void *second = a.allocate(1);
     REQUIRE(second != nullptr);
     a.free(second);
