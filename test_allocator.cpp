@@ -257,7 +257,15 @@ TEST_CASE("allocator randomized stress", "[allocator][stress][.]") {
     bool shouldAllocate =
         activeAllocs.empty() || actionDist(rng) < kAllocateProbabilityPercent;
     if (shouldAllocate) {
-      allocateOne(allocator, rng, sizeDist, patternDist, activeAllocs);
+      try {
+        allocateOne(allocator, rng, sizeDist, patternDist, activeAllocs);
+      } catch (const std::bad_alloc &) {
+        // Allocator being full is expected under this random workload
+        if (activeAllocs.empty()) {
+          throw;
+        }
+        freeRandomOne(allocator, rng, activeAllocs);
+      }
     } else {
       freeRandomOne(allocator, rng, activeAllocs);
     }
