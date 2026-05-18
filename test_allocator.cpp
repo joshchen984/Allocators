@@ -18,7 +18,7 @@ void check_pattern(void *ptr, char byte, std::size_t size) {
     REQUIRE(p[i] == byte);
   }
 }
-const int CHUNK_INFO_SIZE = 24;
+const int CHUNK_INFO_SIZE = 8;
 
 TEST_CASE("allocator", "[allocator]") {
   std::uint32_t capacity = 200;
