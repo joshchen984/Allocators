@@ -11,41 +11,41 @@ private:
     ChunkInfo(std::size_t metadata) : meta{metadata} {}
 
   public:
-    std::size_t getSize();
-    void setSize(std::size_t size);
+    std::size_t getSize() const noexcept;
+    void setSize(std::size_t size) noexcept;
 
-    bool getAllocated();
-    void setAllocated(bool allocated);
+    bool getAllocated() const noexcept;
+    void setAllocated(bool allocated) noexcept;
 
-    inline ChunkInfo *getFooter();
-    static void writeChunk(ChunkInfo *memory, std::size_t size, bool allocated);
+    inline ChunkInfo *getFooter() noexcept;
+    static void writeChunk(ChunkInfo *memory, std::size_t size,
+                           bool allocated) noexcept;
 
     // No bounds check
-    ChunkInfo *next();
-    ChunkInfo *prev(void *heap);
-    bool shouldSplit(std::size_t allocateSize);
+    ChunkInfo *next() noexcept;
+    ChunkInfo *prev(void *heap) noexcept;
+    bool shouldSplit(std::size_t allocateSize) const noexcept;
   };
   std::size_t capacity;
   void *heap;
-  ChunkInfo *free_list;
+  ChunkInfo *freeList;
 
-  ChunkInfo *next_free_chunk(ChunkInfo *startChunk);
-  ChunkInfo *next_free_chunk(ChunkInfo *startChunk, std::size_t size);
-  void splitChunk(ChunkInfo *chunk, std::size_t size);
+  ChunkInfo *nextFreeChunk(ChunkInfo *startChunk) noexcept;
+  ChunkInfo *nextFreeFittingChunk(ChunkInfo *startChunk,
+                                  std::size_t size) noexcept;
+  void splitChunk(ChunkInfo *chunk, std::size_t size) noexcept;
 
-  bool shouldMergeNextChunk(ChunkInfo *chunk);
-  bool shouldMergePrevChunk(ChunkInfo *chunk);
-  void mergeNextFreeChunk(ChunkInfo *chunk);
-  void mergePrevFreeChunk(ChunkInfo *chunk);
-  ChunkInfo *getChunkFromPointer(void *ptr);
+  bool shouldMergeNextChunk(ChunkInfo *chunk) const noexcept;
+  bool shouldMergePrevChunk(ChunkInfo *chunk) const noexcept;
+  void mergeNextFreeChunk(ChunkInfo *chunk) noexcept;
+  void mergePrevFreeChunk(ChunkInfo *chunk) noexcept;
+  ChunkInfo *getChunkFromPointer(void *ptr) noexcept;
 
-  std::size_t alignUp(std::size_t size);
-
-  bool chunkInHeap(ChunkInfo *chunk);
+  bool chunkInHeap(ChunkInfo *chunk) const noexcept;
 
 public:
-  Allocator(std::size_t initial_capacity);
-  ~Allocator();
+  Allocator(std::size_t initialCapacity);
+  ~Allocator() noexcept;
   virtual void *allocate(std::size_t size);
-  virtual void free(void *ptr);
+  virtual void free(void *ptr) noexcept;
 };
