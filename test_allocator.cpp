@@ -21,7 +21,7 @@ void check_pattern(void *ptr, char byte, std::size_t size) {
 const int CHUNK_INFO_SIZE = 8;
 
 TEST_CASE("allocator", "[allocator]") {
-  std::uint32_t capacity = 200;
+  std::size_t capacity = 200;
   Allocator a{capacity};
   SECTION("Can allocate, write, and free one chunk of memory with more memory "
           "in allocator") {

@@ -4,7 +4,46 @@
 #include <stdexcept>
 #include <sys/mman.h>
 
-Allocator::Allocator(std::uint32_t initial_capacity)
+std::size_t Allocator::ChunkInfo::getSize() { return meta & ~(ALIGN - 1); }
+
+void Allocator::ChunkInfo::setSize(std::size_t size) {
+  meta = (meta & (ALIGN - 1)) | (size & ~(ALIGN - 1));
+}
+
+bool Allocator::ChunkInfo::getAllocated() { return meta & 1; }
+void Allocator::ChunkInfo::setAllocated(bool allocated) {
+  meta = (meta & ~1UL) | allocated;
+}
+
+Allocator::ChunkInfo *Allocator::ChunkInfo::getFooter() {
+  return this + getSize() / sizeof(ChunkInfo) - 1;
+}
+
+void Allocator::ChunkInfo::writeChunk(ChunkInfo *memory, std::size_t size,
+                                      bool allocated) {
+  ChunkInfo value{size | allocated};
+  *memory = value;
+  ChunkInfo *footer = memory->getFooter();
+  footer->setSize(size);
+  footer->setAllocated(allocated);
+}
+
+// No bounds check
+Allocator::ChunkInfo *Allocator::ChunkInfo::next() {
+  return this + getSize() / sizeof(ChunkInfo);
+}
+Allocator::ChunkInfo *Allocator::ChunkInfo::prev(void *heap) {
+  if (this == static_cast<ChunkInfo *>(heap)) {
+    return nullptr;
+  }
+  return this - (this - 1)->getSize() / sizeof(ChunkInfo);
+}
+
+bool Allocator::ChunkInfo::shouldSplit(std::size_t allocateSize) {
+  return getSize() > allocateSize + sizeof(ChunkInfo);
+}
+
+Allocator::Allocator(std::size_t initial_capacity)
     : capacity{alignUp(initial_capacity)},
       heap{mmap(NULL, alignUp(initial_capacity), PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)} {
@@ -17,7 +56,7 @@ Allocator::Allocator(std::uint32_t initial_capacity)
 
 Allocator::~Allocator() { munmap(heap, capacity); }
 
-void *Allocator::allocate(std::uint32_t size) {
+void *Allocator::allocate(std::size_t size) {
   size = alignUp(size + sizeof(ChunkInfo));
   ChunkInfo *cur = next_free_chunk(free_list, size);
   if (!chunkInHeap(cur)) {
@@ -80,8 +119,8 @@ void Allocator::mergeNextFreeChunk(ChunkInfo *chunk) {
   next->getFooter()->setSize(newSize);
 }
 
-void Allocator::splitChunk(ChunkInfo *chunk, std::uint32_t size) {
-  std::uint32_t remainingFreeSize = chunk->getSize() - size;
+void Allocator::splitChunk(ChunkInfo *chunk, std::size_t size) {
+  std::size_t remainingFreeSize = chunk->getSize() - size;
   ChunkInfo::writeChunk(chunk, size, true);
   ChunkInfo::writeChunk(chunk->next(), remainingFreeSize, false);
 }
@@ -95,7 +134,7 @@ Allocator::ChunkInfo *Allocator::next_free_chunk(ChunkInfo *startChunk) {
 }
 
 Allocator::ChunkInfo *Allocator::next_free_chunk(ChunkInfo *startChunk,
-                                                 std::uint32_t size) {
+                                                 std::size_t size) {
   ChunkInfo *cur = startChunk;
   while (chunkInHeap(cur) && (cur->getAllocated() || cur->getSize() < size)) {
     cur = cur->next();
