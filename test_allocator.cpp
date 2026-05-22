@@ -1,8 +1,11 @@
 #include "allocator.h"
 #include <algorithm>
+#include <array>
+#include <catch2/benchmark/catch_benchmark.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <new>
 #include <random>
@@ -275,4 +278,83 @@ TEST_CASE("allocator randomized stress", "[allocator][stress][.]") {
   for (const ActiveAlloc &alloc : activeAllocs) {
     allocator.free(alloc.ptr);
   }
+}
+
+TEST_CASE("allocator performance benchmark",
+          "[allocator][benchmark][!benchmark]") {
+  BENCHMARK("burst allocate/free fixed-size blocks") {
+    constexpr std::size_t kHeapSize = 64 * 1024;
+    constexpr std::size_t kBlockSize = 32;
+    constexpr int kRounds = 200;
+
+    Allocator allocator{kHeapSize};
+    std::array<void *, 1024> ptrs{};
+    std::size_t allocatedCount = 0;
+    std::size_t operationCount = 0;
+
+    for (int round = 0; round < kRounds; ++round) {
+      allocatedCount = 0;
+      for (; allocatedCount < ptrs.size(); ++allocatedCount) {
+        try {
+          ptrs[allocatedCount] = allocator.allocate(kBlockSize);
+          ++operationCount;
+        } catch (const std::bad_alloc &) {
+          break;
+        }
+      }
+
+      for (std::size_t i = allocatedCount; i > 0; --i) {
+        allocator.free(ptrs[i - 1]);
+        ++operationCount;
+      }
+    }
+
+    return operationCount;
+  };
+
+  BENCHMARK("mixed random allocation/free workload") {
+    constexpr std::size_t kHeapSize = 64 * 1024;
+    constexpr int kStepCount = 5000;
+    constexpr int kAllocateProbabilityPercent = 65;
+    constexpr int kMaxRequestedSize = 128;
+    constexpr unsigned int kSeed = 0xC0FFEEu;
+
+    Allocator allocator{kHeapSize};
+    std::mt19937 rng(kSeed);
+    std::uniform_int_distribution<int> actionDist(0, 99);
+    std::uniform_int_distribution<int> sizeDist(1, kMaxRequestedSize);
+    std::vector<void *> activeAllocs;
+    activeAllocs.reserve(1024);
+
+    std::size_t operationCount = 0;
+    for (int step = 0; step < kStepCount; ++step) {
+      bool shouldAllocate =
+          activeAllocs.empty() || actionDist(rng) < kAllocateProbabilityPercent;
+
+      if (shouldAllocate) {
+        try {
+          activeAllocs.push_back(
+              allocator.allocate(static_cast<std::size_t>(sizeDist(rng))));
+          ++operationCount;
+        } catch (const std::bad_alloc &) {
+          if (!activeAllocs.empty()) {
+            allocator.free(activeAllocs.back());
+            activeAllocs.pop_back();
+            ++operationCount;
+          }
+        }
+      } else {
+        allocator.free(activeAllocs.back());
+        activeAllocs.pop_back();
+        ++operationCount;
+      }
+    }
+
+    for (void *ptr : activeAllocs) {
+      allocator.free(ptr);
+      ++operationCount;
+    }
+
+    return operationCount;
+  };
 }

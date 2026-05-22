@@ -45,7 +45,13 @@ private:
 
 public:
   Allocator(std::size_t initialCapacity);
+  Allocator(const Allocator &other) = delete;
   ~Allocator() noexcept;
+  Allocator &operator=(const Allocator &other) = delete;
+
+  Allocator(Allocator &&other) = default;
+  Allocator &operator=(Allocator &&other) = default;
+
   virtual void *allocate(std::size_t size);
   virtual void free(void *ptr) noexcept;
 };
